@@ -6,7 +6,41 @@ local buffer_order = nil
 -- Variable to track the currently open popup window
 local active_popup_win = nil
 
+-- Theme colors
+local colors = {
+	background = "#282828", -- Gruvbox fg1
+	foreground = "#ddc7a1", -- Gruvbox fg2
+	taupe = "#504945", -- Gruvbox color2
+	neutral_gray = "#32302f", -- Gruvbox color3
+	beige = "#a89984", -- Gruvbox color4
+	blue_green = "#7daea3", -- Gruvbox color5
+	greenish = "#8ec07c", -- Gruvbox color6
+	yellowish = "#d8a657", -- Gruvbox color7
+	pinkish = "#d3869b", -- Gruvbox color8
+	reddish = "#ea6962", -- Gruvbox color9
+}
+
+-- Create highlight groups when the plugin loads
+local function setup_highlights()
+	-- Tag highlight - using pinkish for emphasis
+	vim.api.nvim_set_hl(0, "SpineTag", { fg = colors.yellowish, bold = true })
+	-- File name highlight - using foreground color
+	vim.api.nvim_set_hl(0, "SpineFileName", { fg = colors.foreground })
+	-- Current line highlight (replaces Visual)
+	vim.api.nvim_set_hl(0, "SpineSelected", { bg = colors.taupe })
+	-- Border highlight
+	vim.api.nvim_set_hl(0, "SpineBorder", { fg = colors.foreground })
+	-- Title highlight
+	vim.api.nvim_set_hl(0, "SpineTitle", { fg = colors.greenish, bold = true })
+	-- Add a new highlight group for the invisible cursor
+	vim.api.nvim_set_hl(0, "SpineInvisibleCursor", { reverse = true, blend = 100 })
+end
+
 function M.Open()
+	-- Ensure highlights are set up
+	setup_highlights()
+	local augroup = vim.api.nvim_create_augroup("SpineAugroup", {})
+
 	-- Close any existing popup before opening a new one
 	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
 		vim.api.nvim_win_close(active_popup_win, true)
@@ -18,9 +52,24 @@ function M.Open()
 	local original_scrolloff = vim.o.scrolloff
 	-- Temporarily disable `scrolloff`
 	vim.o.scrolloff = 0
+	-- Remember the current `sidescrolloff` setting
+	local original_sidescrolloff = vim.o.sidescrolloff
+	-- Disable horizontal scrolloff
+	vim.o.sidescrolloff = 0
 
 	-- 2. Create a scratch buffer for the popup
 	local picker_buf = vim.api.nvim_create_buf(false, true)
+
+	-- After creating the picker buffer, set the cursor highlight
+	local original_guicursor = vim.o.guicursor
+	vim.api.nvim_create_autocmd({ "BufEnter" }, {
+		buffer = picker_buf,
+		callback = function()
+			original_guicursor = vim.go.guicursor
+			vim.go.guicursor = "a:SpineInvisibleCursor"
+		end,
+		group = augroup,
+	})
 	-- 3. Gather all the *listed* buffers that are loaded
 	if not buffer_order then
 		buffer_order = {}
@@ -30,6 +79,9 @@ function M.Open()
 			end
 		end
 	end
+
+	-- Create namespace for highlights
+	local ns_id = vim.api.nvim_create_namespace("SpineHighlight")
 
 	-- 4. Build display lines and set them in the picker buffer
 	local max_width = 0 -- Track the maximum line width
@@ -49,6 +101,16 @@ function M.Open()
 		-- Temporarily make the buffer modifiable to update the lines
 		vim.api.nvim_set_option_value("modifiable", true, { buf = picker_buf })
 		vim.api.nvim_buf_set_lines(picker_buf, 0, -1, false, lines)
+
+		-- Apply syntax highlighting to each line
+		vim.api.nvim_buf_clear_namespace(picker_buf, ns_id, 0, -1)
+		for i = 1, #lines do
+			-- Highlight tag (first character)
+			vim.api.nvim_buf_add_highlight(picker_buf, ns_id, "SpineTag", i - 1, 0, 1)
+			-- Highlight filename (after the tag and two spaces)
+			vim.api.nvim_buf_add_highlight(picker_buf, ns_id, "SpineFileName", i - 1, 3, -1)
+		end
+
 		vim.api.nvim_set_option_value("modifiable", false, { buf = picker_buf })
 	end
 
@@ -128,50 +190,26 @@ function M.Open()
 		end)
 	end
 
-	-- Function to navigate to buffer under cursor
-	local function navigate_to_buffer()
-		local cursor_pos = vim.api.nvim_win_get_cursor(0)
-		local line_num = cursor_pos[1]
-		if line_num <= #buffer_order then
-			local bnr = buffer_order[line_num]
-			local popup_win = vim.api.nvim_get_current_win()
-			vim.api.nvim_win_close(popup_win, true)
-			vim.o.scrolloff = original_scrolloff
-			if vim.api.nvim_win_is_valid(prev_win) then
-				vim.api.nvim_set_current_win(prev_win)
-			end
-			vim.cmd("buffer " .. bnr)
-		end
-	end
-
 	-- Keymaps to close the popup
-	vim.keymap.set("n", "q", function()
-		vim.o.scrolloff = original_scrolloff
-		vim.cmd("quit")
-	end, { buffer = picker_buf, noremap = true, silent = true })
-	vim.keymap.set("n", "<Esc>", function()
-		vim.o.scrolloff = original_scrolloff
-		vim.cmd("quit")
-	end, { buffer = picker_buf, noremap = true, silent = true })
 	vim.keymap.set("n", "<C-c>", switch_tag, { buffer = picker_buf, noremap = true, silent = true })
-	-- Add Enter keymap
-	vim.keymap.set("n", "<CR>", navigate_to_buffer, { buffer = picker_buf, noremap = true, silent = true })
+	vim.keymap.set("n", "-", "<nop>", { buffer = picker_buf, noremap = true, silent = true })
 
 	-- Highlight the line under the cursor
-	local ns_id = vim.api.nvim_create_namespace("PickerHighlight")
 	local function update_highlight()
 		local cursor_pos = vim.api.nvim_win_get_cursor(0)
 		local line_num = cursor_pos[1] - 1 -- Convert 1-based to 0-based
-		vim.api.nvim_buf_clear_namespace(picker_buf, ns_id, 0, -1)
-		vim.api.nvim_buf_add_highlight(picker_buf, ns_id, "Visual", line_num, 0, -1)
+		-- Clear previous selection highlight
+		vim.api.nvim_buf_clear_namespace(picker_buf, ns_id + 1, 0, -1)
+		-- Add new selection highlight
+		vim.api.nvim_buf_add_highlight(picker_buf, ns_id + 1, "SpineSelected", line_num, 0, -1)
 	end
+
 	vim.api.nvim_create_autocmd("CursorMoved", {
 		buffer = picker_buf,
 		callback = update_highlight,
 	})
 	-- Initialize the highlight for the first line
 	update_highlight()
-
 	-- Keymap to move items up and down
 	local function swap_items(idx1, idx2)
 		buffer_order[idx1], buffer_order[idx2] = buffer_order[idx2], buffer_order[idx1]
@@ -228,14 +266,14 @@ function M.Open()
 
 	-- Initial setup of buffer keymaps
 	update_buffer_keymaps()
-
-	-- Open the floating window
+	-- Open the floating window with updated options
 	local height = #buffer_order
 	local total_lines = vim.o.lines
 	local total_cols = vim.o.columns
-	local width = math.min(max_width, total_cols)
+	local width = math.min(max_width, total_cols + 1)
 	local row = math.floor((total_lines - height) / 2)
 	local col = math.floor((total_cols - width) / 2)
+
 	active_popup_win = vim.api.nvim_open_win(picker_buf, true, {
 		relative = "editor",
 		row = row,
@@ -244,9 +282,73 @@ function M.Open()
 		height = height == 0 and 1 or height,
 		style = "minimal",
 		border = "rounded",
-		title = "Spine",
+		title = " Spine ",
 		title_pos = "center",
 	})
+
+	-- Apply window-specific highlights
+	vim.api.nvim_set_option_value(
+		"winhighlight",
+		"Normal:SpineNormal,FloatBorder:SpineBorder",
+		{ win = active_popup_win }
+	)
+	-- Set window-local options
+	vim.api.nvim_set_option_value("cursorline", true, { win = active_popup_win })
+	-- vim.api.nvim_set_option_value("winblend", 0, { win = active_popup_win })
+
+	-- Function to restore original settings when closing
+	local function restore_settings()
+		vim.o.scrolloff = original_scrolloff
+		vim.o.sidescrolloff = original_sidescrolloff
+		vim.o.guicursor = original_guicursor
+	end
+
+	-- Update close-related keymaps to restore settings
+	vim.keymap.set("n", "q", function()
+		restore_settings()
+		vim.cmd("quit")
+	end, { buffer = picker_buf, noremap = true, silent = true })
+
+	vim.keymap.set("n", "<Esc>", function()
+		restore_settings()
+		vim.cmd("quit")
+	end, { buffer = picker_buf, noremap = true, silent = true })
+
+	-- Update buffer navigation functions to restore settings
+	local function navigate_to_buffer()
+		local cursor_pos = vim.api.nvim_win_get_cursor(0)
+		local line_num = cursor_pos[1]
+		if line_num <= #buffer_order then
+			local bnr = buffer_order[line_num]
+			local popup_win = vim.api.nvim_get_current_win()
+			vim.api.nvim_win_close(popup_win, true)
+			restore_settings()
+			if vim.api.nvim_win_is_valid(prev_win) then
+				vim.api.nvim_set_current_win(prev_win)
+			end
+			vim.cmd("buffer " .. bnr)
+		end
+	end
+
+	vim.keymap.set("n", "<CR>", navigate_to_buffer, { buffer = picker_buf, noremap = true, silent = true })
+
+	-- Update tag keymaps to restore settings
+	for i = 1, #buffer_order do
+		local bnr = buffer_order[i]
+		local prefix_char = characters:sub(i, i)
+		vim.keymap.set("n", prefix_char, function()
+			local popup_win = vim.api.nvim_get_current_win()
+			vim.api.nvim_win_close(popup_win, true)
+			restore_settings()
+			if vim.api.nvim_win_is_valid(prev_win) then
+				vim.api.nvim_set_current_win(prev_win)
+			end
+			vim.cmd("buffer " .. bnr)
+		end, { buffer = picker_buf, noremap = true, silent = true })
+	end
+
+	-- Initial setup of buffer keymaps
+	update_buffer_keymaps()
 end
 
 return M
