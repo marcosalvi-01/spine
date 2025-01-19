@@ -3,8 +3,15 @@ local M = {}
 local characters = "neiotsrc"
 -- Persistent list to track the buffer order
 local buffer_order = nil
+-- Variable to track the currently open popup window
+local active_popup_win = nil
 
 function M.Open()
+	-- Close any existing popup before opening a new one
+	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
+		vim.api.nvim_win_close(active_popup_win, true)
+		return
+	end
 	-- 1. Remember the current window so we can return to it later
 	local prev_win = vim.api.nvim_get_current_win()
 	-- Remember the current `scrolloff` setting
@@ -25,9 +32,10 @@ function M.Open()
 	end
 
 	-- 4. Build display lines and set them in the picker buffer
+	local max_width = 0 -- Track the maximum line width
 	local function update_buffer_lines()
 		local lines = {}
-		local max_width = 0 -- Track the maximum line width
+		max_width = 0 -- Reset max_width before recalculating
 		local max_items = math.min(#buffer_order, #characters)
 		for i = 1, max_items do
 			local bnr = buffer_order[i]
@@ -149,13 +157,12 @@ function M.Open()
 
 	-- Open the floating window
 	local height = #buffer_order
-	local width = 40
 	local total_lines = vim.o.lines
 	local total_cols = vim.o.columns
-	width = math.min(width, total_cols - 4) -- Leave some margin
+	local width = math.min(max_width, total_cols - 4)
 	local row = math.floor((total_lines - height) / 2)
 	local col = math.floor((total_cols - width) / 2)
-	vim.api.nvim_open_win(picker_buf, true, {
+	active_popup_win = vim.api.nvim_open_win(picker_buf, true, {
 		relative = "editor",
 		row = row,
 		col = col,
@@ -163,7 +170,7 @@ function M.Open()
 		height = height == 0 and 1 or height,
 		style = "minimal",
 		border = "rounded",
-		title = "Buffer Picker",
+		title = "Spine",
 		title_pos = "center",
 	})
 end
