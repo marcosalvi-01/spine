@@ -6,6 +6,28 @@ local buffer_order = nil
 -- Variable to track the currently open popup window
 local active_popup_win = nil
 
+local saved = {
+	guicursor = nil,
+	scrolloff = nil,
+	sidescrolloff = nil,
+}
+-- Function to restore original settings when closing
+local function restore_settings()
+	if saved.guicursor then
+		vim.go.guicursor = saved.guicursor
+	end
+	if saved.scrolloff then
+		vim.o.scrolloff = saved.scrolloff
+	end
+	if saved.sidescrolloff then
+		vim.o.sidescrolloff = saved.sidescrolloff
+	end
+	-- zero them so we know they're restored
+	saved.guicursor = nil
+	saved.scrolloff = nil
+	saved.sidescrolloff = nil
+end
+
 -- Theme colors
 local colors = {
 	background = "#282828", -- Gruvbox fg1
@@ -39,38 +61,39 @@ end
 function M.Open()
 	-- Ensure highlights are set up
 	setup_highlights()
-	local augroup = vim.api.nvim_create_augroup("SpineAugroup", {})
 	-- 1. Remember the current window so we can return to it later
 	local prev_win = vim.api.nvim_get_current_win()
 	-- Remember the current `scrolloff` setting
-	local original_scrolloff = vim.o.scrolloff
-	-- Temporarily disable `scrolloff`
-	vim.o.scrolloff = 0
-	-- Remember the current `sidescrolloff` setting
-	local original_sidescrolloff = vim.o.sidescrolloff
-	-- Disable horizontal scrolloff
-	vim.o.sidescrolloff = 0
-
-	-- 2. Create a scratch buffer for the popup
-	local picker_buf = vim.api.nvim_create_buf(false, true)
-
-	-- After creating the picker buffer, set the cursor highlight
-	local original_guicursor = nil
-	vim.api.nvim_create_autocmd({ "BufEnter" }, {
-		buffer = picker_buf,
-		callback = function()
-			original_guicursor = vim.go.guicursor
-			vim.go.guicursor = "a:SpineInvisibleCursor"
-		end,
-		group = augroup,
-	})
-	-- Function to restore original settings when closing
-	local function restore_settings()
-		vim.o.scrolloff = original_scrolloff
-		vim.o.sidescrolloff = original_sidescrolloff
-		vim.o.guicursor = original_guicursor
+	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
+		vim.api.nvim_win_close(active_popup_win, true)
+		restore_settings()
+		active_popup_win = nil
+		return
 	end
 
+	-- If we've never stored them, store them
+	if not saved.guicursor then
+		saved.guicursor = vim.go.guicursor
+	end
+	if not saved.scrolloff then
+		saved.scrolloff = vim.o.scrolloff
+	end
+	if not saved.sidescrolloff then
+		saved.sidescrolloff = vim.o.sidescrolloff
+	end
+
+	vim.o.scrolloff = 0
+	vim.o.sidescrolloff = 0
+
+	local picker_buf = vim.api.nvim_create_buf(false, true)
+
+	-- Now use BufEnter to set invisible cursor
+	vim.api.nvim_create_autocmd("BufEnter", {
+		buffer = picker_buf,
+		callback = function()
+			vim.go.guicursor = "a:SpineInvisibleCursor"
+		end,
+	})
 	-- Close any existing popup before opening a new one
 	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
 		vim.api.nvim_win_close(active_popup_win, true)
