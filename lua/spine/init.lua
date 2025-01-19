@@ -51,6 +51,31 @@ function M.Open()
 		vim.api.nvim_buf_set_lines(picker_buf, 0, -1, false, lines)
 		vim.api.nvim_set_option_value("modifiable", false, { buf = picker_buf })
 	end
+
+	-- Function to update keymaps for buffer selection
+	local function update_buffer_keymaps()
+		-- Clear existing keymaps first
+		for i = 1, #characters do
+			local char = characters:sub(i, i)
+			pcall(vim.keymap.del, "n", char, { buffer = picker_buf })
+		end
+
+		-- Create new keymaps
+		for i = 1, #buffer_order do
+			local bnr = buffer_order[i]
+			local prefix_char = characters:sub(i, i)
+			vim.keymap.set("n", prefix_char, function()
+				local popup_win = vim.api.nvim_get_current_win()
+				vim.api.nvim_win_close(popup_win, true)
+				vim.o.scrolloff = original_scrolloff
+				if vim.api.nvim_win_is_valid(prev_win) then
+					vim.api.nvim_set_current_win(prev_win)
+				end
+				vim.cmd("buffer " .. bnr)
+			end, { buffer = picker_buf, noremap = true, silent = true })
+		end
+	end
+
 	update_buffer_lines()
 
 	-- 5. Make the buffer unmodifiable/scratch
@@ -58,6 +83,50 @@ function M.Open()
 	vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = picker_buf })
 	vim.api.nvim_set_option_value("swapfile", false, { buf = picker_buf })
 	vim.api.nvim_set_option_value("modifiable", false, { buf = picker_buf })
+
+	-- Function to switch tags between lines
+	local function switch_tag()
+		local cursor_pos = vim.api.nvim_win_get_cursor(0)
+		local current_line = cursor_pos[1]
+
+		-- Prompt for new tag
+		vim.ui.input({
+			prompt = "Enter new tag: ",
+			default = "",
+		}, function(new_tag)
+			if not new_tag or new_tag == "" then
+				return
+			end
+
+			-- Find if the new tag already exists
+			local existing_pos = nil
+			for i = 1, #characters do
+				if characters:sub(i, i) == new_tag then
+					existing_pos = i
+					break
+				end
+			end
+
+			if existing_pos then
+				-- Swap buffer positions if tag exists
+				local temp = buffer_order[current_line]
+				buffer_order[current_line] = buffer_order[existing_pos]
+				buffer_order[existing_pos] = temp
+			else
+				-- Add new tag to the characters string
+				characters = characters .. new_tag
+
+				-- Move the current buffer to the end of the list
+				local current_buffer = buffer_order[current_line]
+				table.remove(buffer_order, current_line)
+				table.insert(buffer_order, current_buffer)
+			end
+
+			-- Update the display and keymaps
+			update_buffer_lines()
+			update_buffer_keymaps()
+		end)
+	end
 
 	-- Keymaps to close the popup
 	vim.keymap.set("n", "q", function()
@@ -68,10 +137,7 @@ function M.Open()
 		vim.o.scrolloff = original_scrolloff
 		vim.cmd("quit")
 	end, { buffer = picker_buf, noremap = true, silent = true })
-	vim.keymap.set("n", "<C-c>", function()
-		vim.o.scrolloff = original_scrolloff
-		vim.cmd("quit")
-	end, { buffer = picker_buf, noremap = true, silent = true })
+	vim.keymap.set("n", "<C-c>", switch_tag, { buffer = picker_buf, noremap = true, silent = true })
 
 	-- Highlight the line under the cursor
 	local ns_id = vim.api.nvim_create_namespace("PickerHighlight")
@@ -92,6 +158,7 @@ function M.Open()
 	local function swap_items(idx1, idx2)
 		buffer_order[idx1], buffer_order[idx2] = buffer_order[idx2], buffer_order[idx1]
 		update_buffer_lines()
+		update_buffer_keymaps() -- Update keymaps after swapping
 	end
 
 	vim.keymap.set("n", "<S-Up>", function()
@@ -112,8 +179,8 @@ function M.Open()
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
-	-- Map `C` to close the buffer under the cursor
-	vim.keymap.set("n", "C", function()
+	-- Map `<C-d>` to close the buffer under the cursor
+	vim.keymap.set("n", "<C-d>", function()
 		local cursor_pos = vim.api.nvim_win_get_cursor(0)
 		local line_num = cursor_pos[1]
 		if line_num <= #buffer_order then
@@ -121,6 +188,7 @@ function M.Open()
 			vim.cmd("bdelete " .. bnr)
 			table.remove(buffer_order, line_num)
 			update_buffer_lines()
+			update_buffer_keymaps() -- Update keymaps after removing a buffer
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
@@ -140,26 +208,14 @@ function M.Open()
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
-	-- Map each label character to open its corresponding buffer
-	for i = 1, #buffer_order do
-		local bnr = buffer_order[i]
-		local prefix_char = characters:sub(i, i)
-		vim.keymap.set("n", prefix_char, function()
-			local popup_win = vim.api.nvim_get_current_win()
-			vim.api.nvim_win_close(popup_win, true)
-			vim.o.scrolloff = original_scrolloff
-			if vim.api.nvim_win_is_valid(prev_win) then
-				vim.api.nvim_set_current_win(prev_win)
-			end
-			vim.cmd("buffer " .. bnr)
-		end, { buffer = picker_buf, noremap = true, silent = true })
-	end
+	-- Initial setup of buffer keymaps
+	update_buffer_keymaps()
 
 	-- Open the floating window
 	local height = #buffer_order
 	local total_lines = vim.o.lines
 	local total_cols = vim.o.columns
-	local width = math.min(max_width, total_cols - 4)
+	local width = math.min(max_width, total_cols)
 	local row = math.floor((total_lines - height) / 2)
 	local col = math.floor((total_cols - width) / 2)
 	active_popup_win = vim.api.nvim_open_win(picker_buf, true, {
