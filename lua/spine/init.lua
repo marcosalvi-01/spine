@@ -128,6 +128,22 @@ function M.Open()
 		end)
 	end
 
+	-- Function to navigate to buffer under cursor
+	local function navigate_to_buffer()
+		local cursor_pos = vim.api.nvim_win_get_cursor(0)
+		local line_num = cursor_pos[1]
+		if line_num <= #buffer_order then
+			local bnr = buffer_order[line_num]
+			local popup_win = vim.api.nvim_get_current_win()
+			vim.api.nvim_win_close(popup_win, true)
+			vim.o.scrolloff = original_scrolloff
+			if vim.api.nvim_win_is_valid(prev_win) then
+				vim.api.nvim_set_current_win(prev_win)
+			end
+			vim.cmd("buffer " .. bnr)
+		end
+	end
+
 	-- Keymaps to close the popup
 	vim.keymap.set("n", "q", function()
 		vim.o.scrolloff = original_scrolloff
@@ -138,6 +154,8 @@ function M.Open()
 		vim.cmd("quit")
 	end, { buffer = picker_buf, noremap = true, silent = true })
 	vim.keymap.set("n", "<C-c>", switch_tag, { buffer = picker_buf, noremap = true, silent = true })
+	-- Add Enter keymap
+	vim.keymap.set("n", "<CR>", navigate_to_buffer, { buffer = picker_buf, noremap = true, silent = true })
 
 	-- Highlight the line under the cursor
 	local ns_id = vim.api.nvim_create_namespace("PickerHighlight")
@@ -179,7 +197,7 @@ function M.Open()
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
-	-- Map `<C-d>` to close the buffer under the cursor
+	-- Map `D` to close the buffer under the cursor
 	vim.keymap.set("n", "<C-d>", function()
 		local cursor_pos = vim.api.nvim_win_get_cursor(0)
 		local line_num = cursor_pos[1]
