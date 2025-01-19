@@ -1,3 +1,4 @@
+-- TODO: dynamic size adjustment of the popup when deleting items
 local M = {}
 -- Characters used to label each buffer
 local characters = "neiatsrc"
@@ -44,22 +45,15 @@ local colors = {
 
 -- Create highlight groups when the plugin loads
 local function setup_highlights()
-	-- Tag highlight - using pinkish for emphasis
 	vim.api.nvim_set_hl(0, "SpineTag", { fg = colors.yellowish, bold = true })
-	-- File name highlight - using foreground color
-	vim.api.nvim_set_hl(0, "SpineFileName", { fg = colors.foreground })
-	-- Current line highlight (replaces Visual)
+	vim.api.nvim_set_hl(0, "SpineFileName", { fg = colors.greenish })
 	vim.api.nvim_set_hl(0, "SpineSelected", { bg = colors.taupe })
-	-- Border highlight
 	vim.api.nvim_set_hl(0, "SpineBorder", { fg = colors.foreground })
-	-- Title highlight
-	vim.api.nvim_set_hl(0, "SpineTitle", { fg = colors.greenish, bold = true })
-	-- Add a new highlight group for the invisible cursor
+	vim.api.nvim_set_hl(0, "SpineTitle", { fg = colors.blue_green, bold = true })
 	vim.api.nvim_set_hl(0, "SpineInvisibleCursor", { reverse = true, blend = 100 })
 end
 
 function M.Open()
-	-- Ensure highlights are set up
 	setup_highlights()
 	-- 1. Remember the current window so we can return to it later
 	local prev_win = vim.api.nvim_get_current_win()
@@ -94,19 +88,12 @@ function M.Open()
 			vim.go.guicursor = "a:SpineInvisibleCursor"
 		end,
 	})
-	-- Close any existing popup before opening a new one
-	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
-		vim.api.nvim_win_close(active_popup_win, true)
-		restore_settings()
-		return
-	end
+
 	-- 3. Gather all the *listed* buffers that are loaded
-	if not buffer_order then
-		buffer_order = {}
-		for _, b in ipairs(vim.api.nvim_list_bufs()) do
-			if vim.api.nvim_buf_is_loaded(b) and (vim.fn.buflisted(b) == 1) then
-				table.insert(buffer_order, b)
-			end
+	buffer_order = {}
+	for _, b in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_loaded(b) and (vim.fn.buflisted(b) == 1) then
+			table.insert(buffer_order, b)
 		end
 	end
 
@@ -305,6 +292,11 @@ function M.Open()
 	local row = math.floor((total_lines - height) / 2)
 	local col = math.floor((total_cols - width) / 2)
 
+	if width <= 0 then
+		print("[Spine] No open buffer found!")
+		restore_settings()
+		return
+	end
 	active_popup_win = vim.api.nvim_open_win(picker_buf, true, {
 		relative = "editor",
 		row = row,
@@ -320,7 +312,7 @@ function M.Open()
 	-- Apply window-specific highlights
 	vim.api.nvim_set_option_value(
 		"winhighlight",
-		"Normal:SpineNormal,FloatBorder:SpineBorder",
+		"Normal:SpineNormal,FloatBorder:SpineBorder,FloatTitle:SpineTitle",
 		{ win = active_popup_win }
 	)
 
