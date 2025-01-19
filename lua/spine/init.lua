@@ -6,19 +6,7 @@ local M = {}
 -------------------------------
 
 local Constants = {
-	CHARACTERS = "neiatsrc", -- Characters used to label each buffer
-	COLORS = {
-		background = "#282828",
-		foreground = "#ddc7a1",
-		taupe = "#504945",
-		neutral_gray = "#32302f",
-		beige = "#a89984",
-		blue_green = "#7daea3",
-		greenish = "#8ec07c",
-		yellowish = "#d8a657",
-		pinkish = "#d3869b",
-		reddish = "#ea6962",
-	},
+	CHARACTERS = "neiatsrchd0123456789", -- Characters used to label each buffer
 	HIGHLIGHTS = {
 		{ name = "SpineTag", attrs = { fg = "#d8a657", bold = true } },
 		{ name = "SpineFileName", attrs = { fg = "#8ec07c" } },
