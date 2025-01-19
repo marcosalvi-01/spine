@@ -1,6 +1,8 @@
 local M = {}
 -- Characters used to label each buffer
 local characters = "neiotsrc"
+-- Persistent list to track the buffer order
+local buffer_order = nil
 
 function M.Open()
 	-- 1. Remember the current window so we can return to it later
@@ -13,50 +15,44 @@ function M.Open()
 	-- 2. Create a scratch buffer for the popup
 	local picker_buf = vim.api.nvim_create_buf(false, true)
 	-- 3. Gather all the *listed* buffers that are loaded
-	local all_bufs = {}
-	for _, b in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_loaded(b) and (vim.fn.buflisted(b) == 1) then
-			table.insert(all_bufs, b)
-		end
-	end
-	-- Optionally sort them by buffer number
-	table.sort(all_bufs)
-	-- 4. Build display lines and set them in the picker buffer
-	local lines = {}
-	local max_width = 0 -- Track the maximum line width
-	-- We'll only show the first N buffers if we have more than #characters
-	local max_items = math.min(#all_bufs, #characters)
-	for i = 1, max_items do
-		local bnr = all_bufs[i]
-		local prefix_char = characters:sub(i, i)
-		local full_path = vim.api.nvim_buf_get_name(bnr)
-		local name
-		if full_path == "" then
-			name = "[No Name]"
-		else
-			-- Extract just the filename from the path
-			name = vim.fn.fnamemodify(full_path, ":t")
-			-- If it's an empty string (e.g., directory), use the full path
-			if name == "" then
-				name = full_path
+	if not buffer_order then
+		buffer_order = {}
+		for _, b in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_loaded(b) and (vim.fn.buflisted(b) == 1) then
+				table.insert(buffer_order, b)
 			end
 		end
-		local line = prefix_char .. "  " .. name
-		lines[i] = line
-		-- Update max_width if this line is longer
-		max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
 	end
-	-- Fill the floating buffer with these lines
-	vim.api.nvim_buf_set_lines(picker_buf, 0, -1, false, lines)
+
+	-- 4. Build display lines and set them in the picker buffer
+	local function update_buffer_lines()
+		local lines = {}
+		local max_width = 0 -- Track the maximum line width
+		local max_items = math.min(#buffer_order, #characters)
+		for i = 1, max_items do
+			local bnr = buffer_order[i]
+			local prefix_char = characters:sub(i, i)
+			local full_path = vim.api.nvim_buf_get_name(bnr)
+			local name = full_path == "" and "[No Name]" or vim.fn.fnamemodify(full_path, ":t")
+			local line = prefix_char .. "  " .. name
+			lines[i] = line
+			max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+		end
+		-- Temporarily make the buffer modifiable to update the lines
+		vim.api.nvim_set_option_value("modifiable", true, { buf = picker_buf })
+		vim.api.nvim_buf_set_lines(picker_buf, 0, -1, false, lines)
+		vim.api.nvim_set_option_value("modifiable", false, { buf = picker_buf })
+	end
+	update_buffer_lines()
+
 	-- 5. Make the buffer unmodifiable/scratch
 	vim.api.nvim_set_option_value("buftype", "nofile", { buf = picker_buf })
 	vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = picker_buf })
 	vim.api.nvim_set_option_value("swapfile", false, { buf = picker_buf })
 	vim.api.nvim_set_option_value("modifiable", false, { buf = picker_buf })
-	vim.api.nvim_set_option_value("readonly", true, { buf = picker_buf })
+
 	-- Keymaps to close the popup
 	vim.keymap.set("n", "q", function()
-		-- Restore the original `scrolloff` value
 		vim.o.scrolloff = original_scrolloff
 		vim.cmd("quit")
 	end, { buffer = picker_buf, noremap = true, silent = true })
@@ -84,49 +80,48 @@ function M.Open()
 	-- Initialize the highlight for the first line
 	update_highlight()
 
-	-- 6. Map <Enter> to open the buffer under the cursor
-	vim.keymap.set("n", "<CR>", function()
+	-- Keymap to move items up and down
+	local function swap_items(idx1, idx2)
+		buffer_order[idx1], buffer_order[idx2] = buffer_order[idx2], buffer_order[idx1]
+		update_buffer_lines()
+	end
+
+	vim.keymap.set("n", "<S-Up>", function()
 		local cursor_pos = vim.api.nvim_win_get_cursor(0)
 		local line_num = cursor_pos[1]
-		if line_num <= max_items then
-			local bnr = all_bufs[line_num]
-			local popup_win = vim.api.nvim_get_current_win()
-			-- Close the popup window
-			vim.api.nvim_win_close(popup_win, true)
-			-- Restore the original `scrolloff` value
-			vim.o.scrolloff = original_scrolloff
-			-- Return to the previous window
-			if vim.api.nvim_win_is_valid(prev_win) then
-				vim.api.nvim_set_current_win(prev_win)
-			end
-			-- Switch to the selected buffer in that window
-			vim.cmd("buffer " .. bnr)
+		if line_num > 1 then
+			swap_items(line_num, line_num - 1)
+			vim.api.nvim_win_set_cursor(0, { line_num - 1, 0 })
+		end
+	end, { buffer = picker_buf, noremap = true, silent = true })
+
+	vim.keymap.set("n", "<S-Down>", function()
+		local cursor_pos = vim.api.nvim_win_get_cursor(0)
+		local line_num = cursor_pos[1]
+		if line_num < #buffer_order then
+			swap_items(line_num, line_num + 1)
+			vim.api.nvim_win_set_cursor(0, { line_num + 1, 0 })
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
 	-- Map each label character to open its corresponding buffer
-	for i = 1, max_items do
-		local bnr = all_bufs[i]
+	for i = 1, #buffer_order do
+		local bnr = buffer_order[i]
 		local prefix_char = characters:sub(i, i)
 		vim.keymap.set("n", prefix_char, function()
 			local popup_win = vim.api.nvim_get_current_win()
-			-- Close the popup window
 			vim.api.nvim_win_close(popup_win, true)
-			-- Restore the original `scrolloff` value
 			vim.o.scrolloff = original_scrolloff
-			-- Return to the previous window
 			if vim.api.nvim_win_is_valid(prev_win) then
 				vim.api.nvim_set_current_win(prev_win)
 			end
-			-- Switch to the selected buffer in that window
 			vim.cmd("buffer " .. bnr)
 		end, { buffer = picker_buf, noremap = true, silent = true })
 	end
 
-	-- 7. Open the floating window with dynamic size
-	local height = #lines
-	local width = max_width + 2 -- Add some padding for the border
-	-- Ensure the window isn't too large
+	-- Open the floating window
+	local height = #buffer_order
+	local width = 40
 	local total_lines = vim.o.lines
 	local total_cols = vim.o.columns
 	width = math.min(width, total_cols - 4) -- Leave some margin
@@ -137,10 +132,10 @@ function M.Open()
 		row = row,
 		col = col,
 		width = width,
-		height = height == 0 and 1 or height, -- At least 1 line in height
+		height = height == 0 and 1 or height,
 		style = "minimal",
 		border = "rounded",
-		title = "Spine",
+		title = "Buffer Picker",
 		title_pos = "center",
 	})
 end
