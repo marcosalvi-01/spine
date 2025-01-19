@@ -170,10 +170,18 @@ function BufferManager.create_picker_buffer()
 	return picker_buf
 end
 
--- Helper: returns the display name for a buffer.
+-- Helper: returns the icon, icon's highlight group, and display name for a buffer.
 local function get_buffer_display(bnr)
 	local full_path = vim.api.nvim_buf_get_name(bnr)
-	return (full_path == "" and "[No Name]") or vim.fn.fnamemodify(full_path, ":t")
+	local name = (full_path == "" and "[No Name]") or vim.fn.fnamemodify(full_path, ":t")
+
+	-- Extract the extension (without the leading dot)
+	local ext = full_path:match("^.+%.(.+)$") or ""
+
+	-- Retrieve the icon and icon highlight using the file name and extension.
+	local icon, icon_hl = require("nvim-web-devicons").get_icon(name, ext, { default = true })
+
+	return icon, icon_hl, name
 end
 
 -- Updates content and highlights for the picker buffer.
@@ -181,19 +189,42 @@ function BufferManager.update_buffer_lines(picker_buf)
 	local lines = {}
 	local max_items = math.min(#State.custom_order, #Constants.CHARACTERS)
 
+	-- Build the lines.
 	for i = 1, max_items do
 		local bnr = State.custom_order[i]
 		local prefix_char = Constants.CHARACTERS:sub(i, i)
-		lines[i] = prefix_char .. "  " .. get_buffer_display(bnr)
+		local icon, _, name = get_buffer_display(bnr)
+		-- Format: prefix + "  " + icon + " " + name
+		lines[i] = prefix_char .. "  " .. icon .. " " .. name
 	end
 
 	vim.api.nvim_set_option_value("modifiable", true, { buf = picker_buf })
 	vim.api.nvim_buf_set_lines(picker_buf, 0, -1, false, lines)
 	vim.api.nvim_buf_clear_namespace(picker_buf, State.ns_id, 0, -1)
 
+	-- Apply highlights on each line:
 	for i = 1, #lines do
-		vim.api.nvim_buf_add_highlight(picker_buf, State.ns_id, "SpineTag", i - 1, 0, 1)
-		vim.api.nvim_buf_add_highlight(picker_buf, State.ns_id, "SpineFileName", i - 1, 3, -1)
+		local bnr = State.custom_order[i]
+		local icon, icon_hl, _ = get_buffer_display(bnr)
+
+		local ns = State.ns_id
+
+		-- Highlight the tag (prefix character)
+		-- The tag occupies the first character (0 to 1).
+		vim.api.nvim_buf_add_highlight(picker_buf, ns, "SpineTag", i - 1, 0, 1)
+
+		-- Calculate the positions (in display cells) for icon and file name:
+		-- Format: prefix_char (1 cell), "  " (2 cells), then icon, then " " then name.
+		local icon_start = 3 -- 1 (prefix char) + 2 (spaces)
+		local icon_width = vim.fn.strdisplaywidth(icon)
+		local icon_end = icon_start + icon_width
+
+		-- Highlight the icon with its own highlight group.
+		vim.api.nvim_buf_add_highlight(picker_buf, ns, icon_hl, i - 1, icon_start, icon_end)
+
+		-- File name highlight will start after a space following the icon.
+		local name_start = icon_end + 1
+		vim.api.nvim_buf_add_highlight(picker_buf, ns, "SpineFileName", i - 1, name_start, -1)
 	end
 
 	vim.api.nvim_set_option_value("modifiable", false, { buf = picker_buf })
@@ -382,7 +413,7 @@ function M.Open()
 		relative = "editor",
 		row = dims.row,
 		col = dims.col,
-		width = dims.width,
+		width = dims.width + 2,
 		height = dims.height,
 		style = "minimal",
 		border = "rounded",
