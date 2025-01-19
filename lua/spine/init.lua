@@ -1,4 +1,3 @@
--- TODO: dynamic size adjustment of the popup when deleting items
 local M = {}
 -- Characters used to label each buffer
 local characters = "neiatsrc"
@@ -31,16 +30,16 @@ end
 
 -- Theme colors
 local colors = {
-	background = "#282828", -- Gruvbox fg1
-	foreground = "#ddc7a1", -- Gruvbox fg2
-	taupe = "#504945", -- Gruvbox color2
-	neutral_gray = "#32302f", -- Gruvbox color3
-	beige = "#a89984", -- Gruvbox color4
-	blue_green = "#7daea3", -- Gruvbox color5
-	greenish = "#8ec07c", -- Gruvbox color6
-	yellowish = "#d8a657", -- Gruvbox color7
-	pinkish = "#d3869b", -- Gruvbox color8
-	reddish = "#ea6962", -- Gruvbox color9
+	background = "#282828",
+	foreground = "#ddc7a1",
+	taupe = "#504945",
+	neutral_gray = "#32302f",
+	beige = "#a89984",
+	blue_green = "#7daea3",
+	greenish = "#8ec07c",
+	yellowish = "#d8a657",
+	pinkish = "#d3869b",
+	reddish = "#ea6962",
 }
 
 -- Create highlight groups when the plugin loads
@@ -51,6 +50,48 @@ local function setup_highlights()
 	vim.api.nvim_set_hl(0, "SpineBorder", { fg = colors.foreground })
 	vim.api.nvim_set_hl(0, "SpineTitle", { fg = colors.blue_green, bold = true })
 	vim.api.nvim_set_hl(0, "SpineInvisibleCursor", { reverse = true, blend = 100 })
+end
+
+local function calculate_window_dimensions()
+	local max_width = 0
+	local max_items = math.min(#buffer_order, #characters)
+
+	-- Calculate max width based on current buffer names
+	for i = 1, max_items do
+		local bnr = buffer_order[i]
+		local prefix_char = characters:sub(i, i)
+		local full_path = vim.api.nvim_buf_get_name(bnr)
+		local name = full_path == "" and "[No Name]" or vim.fn.fnamemodify(full_path, ":t")
+		local line = prefix_char .. "  " .. name
+		max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+	end
+
+	local total_lines = vim.o.lines
+	local total_cols = vim.o.columns
+	local height = #buffer_order
+	local width = math.min(max_width, total_cols - 2)
+	local row = math.floor((total_lines - height) / 2)
+	local col = math.floor((total_cols - width) / 2)
+
+	return {
+		width = width,
+		height = height == 0 and 1 or height,
+		row = row,
+		col = col,
+	}
+end
+
+local function update_window_size()
+	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
+		local dims = calculate_window_dimensions()
+		vim.api.nvim_win_set_config(active_popup_win, {
+			relative = "editor",
+			row = dims.row,
+			col = dims.col,
+			width = dims.width,
+			height = dims.height,
+		})
+	end
 end
 
 function M.Open()
@@ -253,7 +294,6 @@ function M.Open()
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
-	-- Map `D` to close the buffer under the cursor
 	vim.keymap.set("n", "<C-d>", function()
 		local cursor_pos = vim.api.nvim_win_get_cursor(0)
 		local line_num = cursor_pos[1]
@@ -261,8 +301,18 @@ function M.Open()
 			local bnr = buffer_order[line_num]
 			vim.cmd("bdelete " .. bnr)
 			table.remove(buffer_order, line_num)
+
+			-- Update display
 			update_buffer_lines()
-			update_buffer_keymaps() -- Update keymaps after removing a buffer
+			update_buffer_keymaps()
+
+			-- Adjust window size
+			update_window_size()
+
+			-- Adjust cursor position if needed
+			if line_num > #buffer_order then
+				vim.api.nvim_win_set_cursor(0, { #buffer_order, 0 })
+			end
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
@@ -284,31 +334,26 @@ function M.Open()
 
 	-- Initial setup of buffer keymaps
 	update_buffer_keymaps()
-	-- Open the floating window with updated options
-	local height = #buffer_order
-	local total_lines = vim.o.lines
-	local total_cols = vim.o.columns
-	local width = math.min(max_width, total_cols + 1)
-	local row = math.floor((total_lines - height) / 2)
-	local col = math.floor((total_cols - width) / 2)
 
-	if width <= 0 then
+	-- Open the floating window with updated options
+	local dims = calculate_window_dimensions()
+	if dims.width <= 0 then
 		print("[Spine] No open buffer found!")
 		restore_settings()
 		return
 	end
+
 	active_popup_win = vim.api.nvim_open_win(picker_buf, true, {
 		relative = "editor",
-		row = row,
-		col = col,
-		width = width,
-		height = height == 0 and 1 or height,
+		row = dims.row,
+		col = dims.col,
+		width = dims.width,
+		height = dims.height,
 		style = "minimal",
 		border = "rounded",
 		title = " Spine ",
 		title_pos = "center",
 	})
-
 	-- Apply window-specific highlights
 	vim.api.nvim_set_option_value(
 		"winhighlight",
