@@ -353,21 +353,6 @@ function M.Open()
 
 	vim.keymap.set("n", "<CR>", navigate_to_buffer, { buffer = picker_buf, noremap = true, silent = true })
 
-	-- -- Update tag keymaps to restore settings
-	-- for i = 1, #buffer_order do
-	-- 	local bnr = buffer_order[i]
-	-- 	local prefix_char = characters:sub(i, i)
-	-- 	vim.keymap.set("n", prefix_char, function()
-	-- 		local popup_win = vim.api.nvim_get_current_win()
-	-- 		vim.api.nvim_win_close(popup_win, true)
-	-- 		restore_settings()
-	-- 		if vim.api.nvim_win_is_valid(prev_win) then
-	-- 			vim.api.nvim_set_current_win(prev_win)
-	-- 		end
-	-- 		vim.cmd("buffer " .. bnr)
-	-- 	end, { buffer = picker_buf, noremap = true, silent = true })
-	-- end
-
 	-- Initial setup of buffer keymaps
 	update_buffer_keymaps()
 end
