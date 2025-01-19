@@ -1,6 +1,6 @@
 local M = {}
 -- Characters used to label each buffer
-local characters = "neiotsrc"
+local characters = "neiatsrc"
 -- Persistent list to track the buffer order
 local buffer_order = nil
 -- Variable to track the currently open popup window
@@ -40,12 +40,6 @@ function M.Open()
 	-- Ensure highlights are set up
 	setup_highlights()
 	local augroup = vim.api.nvim_create_augroup("SpineAugroup", {})
-
-	-- Close any existing popup before opening a new one
-	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
-		vim.api.nvim_win_close(active_popup_win, true)
-		return
-	end
 	-- 1. Remember the current window so we can return to it later
 	local prev_win = vim.api.nvim_get_current_win()
 	-- Remember the current `scrolloff` setting
@@ -61,7 +55,7 @@ function M.Open()
 	local picker_buf = vim.api.nvim_create_buf(false, true)
 
 	-- After creating the picker buffer, set the cursor highlight
-	local original_guicursor = vim.o.guicursor
+	local original_guicursor = nil
 	vim.api.nvim_create_autocmd({ "BufEnter" }, {
 		buffer = picker_buf,
 		callback = function()
@@ -70,6 +64,19 @@ function M.Open()
 		end,
 		group = augroup,
 	})
+	-- Function to restore original settings when closing
+	local function restore_settings()
+		vim.o.scrolloff = original_scrolloff
+		vim.o.sidescrolloff = original_sidescrolloff
+		vim.o.guicursor = original_guicursor
+	end
+
+	-- Close any existing popup before opening a new one
+	if active_popup_win and vim.api.nvim_win_is_valid(active_popup_win) then
+		vim.api.nvim_win_close(active_popup_win, true)
+		restore_settings()
+		return
+	end
 	-- 3. Gather all the *listed* buffers that are loaded
 	if not buffer_order then
 		buffer_order = {}
@@ -122,14 +129,16 @@ function M.Open()
 			pcall(vim.keymap.del, "n", char, { buffer = picker_buf })
 		end
 
-		-- Create new keymaps
 		for i = 1, #buffer_order do
 			local bnr = buffer_order[i]
 			local prefix_char = characters:sub(i, i)
+
+			-- Now also call restore_settings() here:
 			vim.keymap.set("n", prefix_char, function()
 				local popup_win = vim.api.nvim_get_current_win()
 				vim.api.nvim_win_close(popup_win, true)
-				vim.o.scrolloff = original_scrolloff
+				restore_settings()
+
 				if vim.api.nvim_win_is_valid(prev_win) then
 					vim.api.nvim_set_current_win(prev_win)
 				end
@@ -190,7 +199,6 @@ function M.Open()
 		end)
 	end
 
-	-- Keymaps to close the popup
 	vim.keymap.set("n", "<C-c>", switch_tag, { buffer = picker_buf, noremap = true, silent = true })
 	vim.keymap.set("n", "-", "<nop>", { buffer = picker_buf, noremap = true, silent = true })
 
@@ -256,7 +264,7 @@ function M.Open()
 			local bnr = buffer_order[line_num]
 			local popup_win = vim.api.nvim_get_current_win()
 			vim.api.nvim_win_close(popup_win, true)
-			vim.o.scrolloff = original_scrolloff
+			restore_settings()
 			if vim.api.nvim_win_is_valid(prev_win) then
 				vim.api.nvim_set_current_win(prev_win)
 			end
@@ -292,16 +300,6 @@ function M.Open()
 		"Normal:SpineNormal,FloatBorder:SpineBorder",
 		{ win = active_popup_win }
 	)
-	-- Set window-local options
-	vim.api.nvim_set_option_value("cursorline", true, { win = active_popup_win })
-	-- vim.api.nvim_set_option_value("winblend", 0, { win = active_popup_win })
-
-	-- Function to restore original settings when closing
-	local function restore_settings()
-		vim.o.scrolloff = original_scrolloff
-		vim.o.sidescrolloff = original_sidescrolloff
-		vim.o.guicursor = original_guicursor
-	end
 
 	-- Update close-related keymaps to restore settings
 	vim.keymap.set("n", "q", function()
@@ -332,20 +330,20 @@ function M.Open()
 
 	vim.keymap.set("n", "<CR>", navigate_to_buffer, { buffer = picker_buf, noremap = true, silent = true })
 
-	-- Update tag keymaps to restore settings
-	for i = 1, #buffer_order do
-		local bnr = buffer_order[i]
-		local prefix_char = characters:sub(i, i)
-		vim.keymap.set("n", prefix_char, function()
-			local popup_win = vim.api.nvim_get_current_win()
-			vim.api.nvim_win_close(popup_win, true)
-			restore_settings()
-			if vim.api.nvim_win_is_valid(prev_win) then
-				vim.api.nvim_set_current_win(prev_win)
-			end
-			vim.cmd("buffer " .. bnr)
-		end, { buffer = picker_buf, noremap = true, silent = true })
-	end
+	-- -- Update tag keymaps to restore settings
+	-- for i = 1, #buffer_order do
+	-- 	local bnr = buffer_order[i]
+	-- 	local prefix_char = characters:sub(i, i)
+	-- 	vim.keymap.set("n", prefix_char, function()
+	-- 		local popup_win = vim.api.nvim_get_current_win()
+	-- 		vim.api.nvim_win_close(popup_win, true)
+	-- 		restore_settings()
+	-- 		if vim.api.nvim_win_is_valid(prev_win) then
+	-- 			vim.api.nvim_set_current_win(prev_win)
+	-- 		end
+	-- 		vim.cmd("buffer " .. bnr)
+	-- 	end, { buffer = picker_buf, noremap = true, silent = true })
+	-- end
 
 	-- Initial setup of buffer keymaps
 	update_buffer_keymaps()
