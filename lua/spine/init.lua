@@ -104,6 +104,34 @@ function M.Open()
 		end
 	end, { buffer = picker_buf, noremap = true, silent = true })
 
+	-- Map `C` to close the buffer under the cursor
+	vim.keymap.set("n", "C", function()
+		local cursor_pos = vim.api.nvim_win_get_cursor(0)
+		local line_num = cursor_pos[1]
+		if line_num <= #buffer_order then
+			local bnr = buffer_order[line_num]
+			vim.cmd("bdelete " .. bnr)
+			table.remove(buffer_order, line_num)
+			update_buffer_lines()
+		end
+	end, { buffer = picker_buf, noremap = true, silent = true })
+
+	-- Map `Control+S` to open the buffer under the cursor in a vertical split
+	vim.keymap.set("n", "<C-s>", function()
+		local cursor_pos = vim.api.nvim_win_get_cursor(0)
+		local line_num = cursor_pos[1]
+		if line_num <= #buffer_order then
+			local bnr = buffer_order[line_num]
+			local popup_win = vim.api.nvim_get_current_win()
+			vim.api.nvim_win_close(popup_win, true)
+			vim.o.scrolloff = original_scrolloff
+			if vim.api.nvim_win_is_valid(prev_win) then
+				vim.api.nvim_set_current_win(prev_win)
+			end
+			vim.cmd("vsplit | buffer " .. bnr)
+		end
+	end, { buffer = picker_buf, noremap = true, silent = true })
+
 	-- Map each label character to open its corresponding buffer
 	for i = 1, #buffer_order do
 		local bnr = buffer_order[i]
