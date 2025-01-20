@@ -125,6 +125,19 @@ function BufferManager.gather_buffers()
 		end
 	end
 
+	function Reverse(arr, count)
+		local i, j = 1, count or #arr
+
+		while i < j do
+			arr[i], arr[j] = arr[j], arr[i]
+
+			i = i + 1
+			j = j - 1
+		end
+	end
+
+	Reverse(current_bufs, #current_bufs)
+
 	if not State.custom_order then
 		State.custom_order = {}
 		for b, _ in pairs(current_bufs) do
