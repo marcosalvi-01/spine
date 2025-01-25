@@ -9,7 +9,7 @@ local Constants = {
 	CHARACTERS = "neiatsrchd0123456789", -- Characters used to label each buffer
 	HIGHLIGHTS = {
 		{ name = "SpineTag", attrs = { fg = "#d8a657", bold = true } },
-		{ name = "SpineFileName", attrs = { fg = "#8ec07c" } },
+		{ name = "SpineFileName", attrs = { fg = "#ddc7a1" } },
 		{ name = "SpineSelected", attrs = { bg = "#504945" } },
 		{ name = "SpineBorder", attrs = { fg = "#ddc7a1" } },
 		{ name = "SpineTitle", attrs = { fg = "#7daea3", bold = true } },
@@ -89,7 +89,7 @@ function UI.calculate_dimensions()
 	local width = math.min(max_width, total_cols - 2)
 
 	return {
-		width = width,
+		width = width + 2,
 		height = height,
 		row = math.floor((total_lines - height) / 2),
 		col = math.floor((total_cols - width) / 2),
@@ -426,7 +426,7 @@ function M.Open()
 		relative = "editor",
 		row = dims.row,
 		col = dims.col,
-		width = dims.width + 2,
+		width = dims.width,
 		height = dims.height,
 		style = "minimal",
 		border = "rounded",
