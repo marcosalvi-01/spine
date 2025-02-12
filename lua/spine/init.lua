@@ -33,7 +33,7 @@ local default_config = {
 	winhighlight = "Normal:SpineNormal,FloatBorder:SpineBorder,FloatTitle:SpineTitle",
 	-- Prompt text for changing the tag.
 	prompt_tag = "Enter new tag: ",
-	-- New configuration option: whether to reverse the order of buffers.
+	-- Reverse the order of buffers.
 	reverse_sort = true,
 }
 
@@ -182,7 +182,11 @@ function BufferManager.gather_buffers()
 		-- Append any new buffers.
 		for _, b in ipairs(buf_array) do
 			if not seen[b] then
-				table.insert(new_order, b)
+				if M.config.reverse_sort then
+					table.insert(new_order, 1, b)
+				else
+					table.insert(new_order, b)
+				end
 			end
 		end
 		State.custom_order = new_order
@@ -400,6 +404,13 @@ function M.Open()
 	Settings.save()
 
 	BufferManager.gather_buffers()
+
+	-- **New check:** Do not open the picker if no buffers are available.
+	if #State.custom_order == 0 then
+		print("[Spine] No open buffer found!")
+		Settings.restore()
+		return
+	end
 
 	local picker_buf = BufferManager.create_picker_buffer()
 	BufferManager.update_buffer_lines(picker_buf)
