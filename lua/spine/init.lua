@@ -146,16 +146,12 @@ local BufferManager = {}
 
 -- Gathers buffers and persists a custom order.
 function BufferManager.gather_buffers()
-	local current_bufs = {}
+	local buf_array = {}
+	-- Build the list in the original order.
 	for _, b in ipairs(vim.api.nvim_list_bufs()) do
 		if vim.api.nvim_buf_is_loaded(b) and (vim.fn.buflisted(b) == 1) then
-			current_bufs[b] = true
+			table.insert(buf_array, b)
 		end
-	end
-
-	local buf_array = {}
-	for b, _ in pairs(current_bufs) do
-		table.insert(buf_array, b)
 	end
 
 	if M.config.reverse_sort then
@@ -170,9 +166,15 @@ function BufferManager.gather_buffers()
 	if not State.custom_order then
 		State.custom_order = buf_array
 	else
-		-- Remove buffers that are no longer valid.
+		-- Build a set for fast lookup.
+		local current_bufs = {}
+		for _, b in ipairs(buf_array) do
+			current_bufs[b] = true
+		end
+
 		local new_order = {}
 		local seen = {}
+		-- Retain buffers that are still valid.
 		for _, b in ipairs(State.custom_order) do
 			if current_bufs[b] then
 				table.insert(new_order, b)
