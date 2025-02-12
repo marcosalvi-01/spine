@@ -33,6 +33,8 @@ local default_config = {
 	winhighlight = "Normal:SpineNormal,FloatBorder:SpineBorder,FloatTitle:SpineTitle",
 	-- Prompt text for changing the tag.
 	prompt_tag = "Enter new tag: ",
+	-- New configuration option: whether to reverse the order of buffers.
+	reverse_sort = true,
 }
 
 -- The user can override the defaults via the setup() function.
@@ -142,7 +144,7 @@ end
 
 local BufferManager = {}
 
--- Gather and persist the buffer order.
+-- Gathers buffers and persists a custom order.
 function BufferManager.gather_buffers()
 	local current_bufs = {}
 	for _, b in ipairs(vim.api.nvim_list_bufs()) do
@@ -151,16 +153,18 @@ function BufferManager.gather_buffers()
 		end
 	end
 
-	-- Build an array of buffers and reverse it.
 	local buf_array = {}
 	for b, _ in pairs(current_bufs) do
 		table.insert(buf_array, b)
 	end
-	local i, j = 1, #buf_array
-	while i < j do
-		buf_array[i], buf_array[j] = buf_array[j], buf_array[i]
-		i = i + 1
-		j = j - 1
+
+	if M.config.reverse_sort then
+		local i, j = 1, #buf_array
+		while i < j do
+			buf_array[i], buf_array[j] = buf_array[j], buf_array[i]
+			i = i + 1
+			j = j - 1
+		end
 	end
 
 	if not State.custom_order then
@@ -185,7 +189,7 @@ function BufferManager.gather_buffers()
 	end
 end
 
--- Create a temporary, unlisted buffer for the picker.
+-- Creates a temporary, unlisted buffer for the picker.
 function BufferManager.create_picker_buffer()
 	local picker_buf = vim.api.nvim_create_buf(false, true)
 	for opt, val in pairs(M.config.picker_buffer_options) do
@@ -211,7 +215,7 @@ local function get_buffer_display(bnr)
 	return icon, icon_hl, name
 end
 
--- Updates the content and highlights of the picker buffer.
+-- Updates content and highlights for the picker buffer.
 function BufferManager.update_buffer_lines(picker_buf)
 	local lines = {}
 	local max_items = math.min(#State.custom_order, #M.config.characters)
@@ -251,7 +255,7 @@ end
 
 local Keymaps = {}
 
--- Swap two items in the buffer order and update the picker.
+-- Swap two items in the custom order and update the picker.
 function BufferManager.swap_items(picker_buf, idx1, idx2)
 	State.custom_order[idx1], State.custom_order[idx2] = State.custom_order[idx2], State.custom_order[idx1]
 	BufferManager.update_buffer_lines(picker_buf)
