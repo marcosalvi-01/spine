@@ -2,24 +2,51 @@
 local M = {}
 
 -------------------------------
--- Constants & State
+-- Default Configuration
 -------------------------------
 
-local Constants = {
-	CHARACTERS = "neiatsrchd0123456789", -- Characters used to label each buffer
-	HIGHLIGHTS = {
-		{ name = "SpineTag", attrs = { fg = "#d8a657", bold = true } },
-		{ name = "SpineFileName", attrs = { fg = "#ddc7a1" } },
-		{ name = "SpineSelected", attrs = { bg = "#504945" } },
-		{ name = "SpineBorder", attrs = { fg = "#ddc7a1" } },
-		{ name = "SpineTitle", attrs = { fg = "#7daea3", bold = true } },
-		{ name = "SpineInvisibleCursor", attrs = { reverse = true, blend = 100 } },
+local default_config = {
+	-- Characters used to label each buffer.
+	characters = "neiatsrchd0123456789",
+	-- Highlight groups used in the plugin.
+	highlights = {
+		SpineTag = { fg = "#d8a657", bold = true },
+		SpineFileName = { fg = "#ddc7a1" },
+		SpineSelected = { bg = "#504945" },
+		SpineBorder = { fg = "#ddc7a1" },
+		SpineTitle = { fg = "#7daea3", bold = true },
+		SpineInvisibleCursor = { reverse = true, blend = 100 },
+		-- (Optional) A normal highlight for the floating window.
+		SpineNormal = {},
 	},
+	-- Options for the picker buffer.
+	picker_buffer_options = {
+		buftype = "nofile",
+		bufhidden = "wipe",
+		swapfile = false,
+		modifiable = false,
+	},
+	-- Floating window options.
+	border = "rounded",
+	title = "Spine",
+	title_pos = "center",
+	winhighlight = "Normal:SpineNormal,FloatBorder:SpineBorder,FloatTitle:SpineTitle",
+	-- Prompt text for changing the tag.
+	prompt_tag = "Enter new tag: ",
 }
 
--- State holds runtime properties.
+-- The user can override the defaults via the setup() function.
+M.config = {}
+
+function M.setup(user_config)
+	M.config = vim.tbl_deep_extend("force", {}, default_config, user_config or {})
+end
+
+-------------------------------
+-- State
+-------------------------------
+
 local State = {
-	-- custom_order persists changes across opening and closing the picker.
 	custom_order = nil,
 	active_popup_win = nil,
 	prev_win = nil,
@@ -65,19 +92,19 @@ end
 local UI = {}
 
 function UI.setup_highlights()
-	for _, hl in ipairs(Constants.HIGHLIGHTS) do
-		vim.api.nvim_set_hl(0, hl.name, hl.attrs)
+	for group, attrs in pairs(M.config.highlights) do
+		vim.api.nvim_set_hl(0, group, attrs)
 	end
 end
 
 -- Calculates dimensions for the floating window.
 function UI.calculate_dimensions()
 	local max_width = 0
-	local max_items = math.min(#State.custom_order, #Constants.CHARACTERS)
+	local max_items = math.min(#State.custom_order, #M.config.characters)
 
 	for i = 1, max_items do
 		local bnr = State.custom_order[i]
-		local prefix_char = Constants.CHARACTERS:sub(i, i)
+		local prefix_char = M.config.characters:sub(i, i)
 		local full_path = vim.api.nvim_buf_get_name(bnr)
 		local name = (full_path == "" and "[No Name]") or vim.fn.fnamemodify(full_path, ":t")
 		local line = prefix_char .. "  " .. name
@@ -115,8 +142,7 @@ end
 
 local BufferManager = {}
 
--- Maintains persistent order across sessions.
--- If State.custom_order already exists, update it with new buffers and remove invalid ones.
+-- Gather and persist the buffer order.
 function BufferManager.gather_buffers()
 	local current_bufs = {}
 	for _, b in ipairs(vim.api.nvim_list_bufs()) do
@@ -125,89 +151,75 @@ function BufferManager.gather_buffers()
 		end
 	end
 
-	function Reverse(arr, count)
-		local i, j = 1, count or #arr
-
-		while i < j do
-			arr[i], arr[j] = arr[j], arr[i]
-
-			i = i + 1
-			j = j - 1
-		end
+	-- Build an array of buffers and reverse it.
+	local buf_array = {}
+	for b, _ in pairs(current_bufs) do
+		table.insert(buf_array, b)
+	end
+	local i, j = 1, #buf_array
+	while i < j do
+		buf_array[i], buf_array[j] = buf_array[j], buf_array[i]
+		i = i + 1
+		j = j - 1
 	end
 
-	Reverse(current_bufs, #current_bufs)
-
 	if not State.custom_order then
-		State.custom_order = {}
-		for b, _ in pairs(current_bufs) do
-			table.insert(State.custom_order, b)
-		end
+		State.custom_order = buf_array
 	else
 		-- Remove buffers that are no longer valid.
 		local new_order = {}
+		local seen = {}
 		for _, b in ipairs(State.custom_order) do
 			if current_bufs[b] then
 				table.insert(new_order, b)
-				current_bufs[b] = nil -- Remove from table to avoid duplicate insertion.
+				seen[b] = true
 			end
 		end
 		-- Append any new buffers.
-		for b, _ in pairs(current_bufs) do
-			table.insert(new_order, b)
+		for _, b in ipairs(buf_array) do
+			if not seen[b] then
+				table.insert(new_order, b)
+			end
 		end
 		State.custom_order = new_order
 	end
 end
 
--- Creates a temporary, unlisted buffer for the picker.
+-- Create a temporary, unlisted buffer for the picker.
 function BufferManager.create_picker_buffer()
 	local picker_buf = vim.api.nvim_create_buf(false, true)
-	local buf_options = {
-		buftype = "nofile",
-		bufhidden = "wipe",
-		swapfile = false,
-		modifiable = false,
-	}
-	for opt, val in pairs(buf_options) do
+	for opt, val in pairs(M.config.picker_buffer_options) do
 		vim.api.nvim_set_option_value(opt, val, { buf = picker_buf })
 	end
 
 	vim.api.nvim_create_autocmd("BufEnter", {
 		buffer = picker_buf,
 		callback = function()
-			vim.go.guicursor = "a:SpineInvisibleCursor"
+			vim.go.guicursor = "a:" .. "SpineInvisibleCursor"
 		end,
 	})
 
 	return picker_buf
 end
 
--- Helper: returns the icon, icon's highlight group, and display name for a buffer.
+-- Helper: returns the icon, its highlight group, and display name for a buffer.
 local function get_buffer_display(bnr)
 	local full_path = vim.api.nvim_buf_get_name(bnr)
 	local name = (full_path == "" and "[No Name]") or vim.fn.fnamemodify(full_path, ":t")
-
-	-- Extract the extension (without the leading dot)
 	local ext = full_path:match("^.+%.(.+)$") or ""
-
-	-- Retrieve the icon and icon highlight using the file name and extension.
 	local icon, icon_hl = require("nvim-web-devicons").get_icon(name, ext, { default = true })
-
 	return icon, icon_hl, name
 end
 
--- Updates content and highlights for the picker buffer.
+-- Updates the content and highlights of the picker buffer.
 function BufferManager.update_buffer_lines(picker_buf)
 	local lines = {}
-	local max_items = math.min(#State.custom_order, #Constants.CHARACTERS)
+	local max_items = math.min(#State.custom_order, #M.config.characters)
 
-	-- Build the lines.
 	for i = 1, max_items do
 		local bnr = State.custom_order[i]
-		local prefix_char = Constants.CHARACTERS:sub(i, i)
+		local prefix_char = M.config.characters:sub(i, i)
 		local icon, _, name = get_buffer_display(bnr)
-		-- Format: prefix + "  " + icon + " " + name
 		lines[i] = prefix_char .. "  " .. icon .. " " .. name
 	end
 
@@ -215,27 +227,17 @@ function BufferManager.update_buffer_lines(picker_buf)
 	vim.api.nvim_buf_set_lines(picker_buf, 0, -1, false, lines)
 	vim.api.nvim_buf_clear_namespace(picker_buf, State.ns_id, 0, -1)
 
-	-- Apply highlights on each line:
 	for i = 1, #lines do
 		local bnr = State.custom_order[i]
 		local icon, icon_hl, _ = get_buffer_display(bnr)
-
 		local ns = State.ns_id
 
-		-- Highlight the tag (prefix character)
-		-- The tag occupies the first character (0 to 1).
+		-- Highlight the tag (prefix character).
 		vim.api.nvim_buf_add_highlight(picker_buf, ns, "SpineTag", i - 1, 0, 1)
-
-		-- Calculate the positions (in display cells) for icon and file name:
-		-- Format: prefix_char (1 cell), "  " (2 cells), then icon, then " " then name.
-		local icon_start = 3 -- 1 (prefix char) + 2 (spaces)
+		local icon_start = 3
 		local icon_width = vim.fn.strdisplaywidth(icon)
 		local icon_end = icon_start + icon_width
-
-		-- Highlight the icon with its own highlight group.
 		vim.api.nvim_buf_add_highlight(picker_buf, ns, icon_hl, i - 1, icon_start, icon_end)
-
-		-- File name highlight will start after a space following the icon.
 		local name_start = icon_end + 1
 		vim.api.nvim_buf_add_highlight(picker_buf, ns, "SpineFileName", i - 1, name_start, -1)
 	end
@@ -243,20 +245,20 @@ function BufferManager.update_buffer_lines(picker_buf)
 	vim.api.nvim_set_option_value("modifiable", false, { buf = picker_buf })
 end
 
--- Swap items in the custom order and update the picker.
+-------------------------------
+-- Keymap Management
+-------------------------------
+
+local Keymaps = {}
+
+-- Swap two items in the buffer order and update the picker.
 function BufferManager.swap_items(picker_buf, idx1, idx2)
 	State.custom_order[idx1], State.custom_order[idx2] = State.custom_order[idx2], State.custom_order[idx1]
 	BufferManager.update_buffer_lines(picker_buf)
 	Keymaps.setup_buffer_keymaps(picker_buf)
 end
 
--------------------------------
--- Keymap Management
--------------------------------
-
-Keymaps = {}
-
--- Helper to close the picker and switch to the selected buffer.
+-- Helper: close the picker and switch to the selected buffer.
 local function close_picker(bnr)
 	local popup_win = vim.api.nvim_get_current_win()
 	vim.api.nvim_win_close(popup_win, true)
@@ -269,16 +271,14 @@ end
 
 -- Setup keymaps for the picker buffer.
 function Keymaps.setup_buffer_keymaps(picker_buf)
-	-- Clear previous character mappings.
-	for i = 1, #Constants.CHARACTERS do
-		local char = Constants.CHARACTERS:sub(i, i)
+	for i = 1, #M.config.characters do
+		local char = M.config.characters:sub(i, i)
 		pcall(vim.keymap.del, "n", char, { buffer = picker_buf })
 	end
 
-	-- Map each character to its corresponding buffer.
 	for i = 1, #State.custom_order do
 		local bnr = State.custom_order[i]
-		local prefix_char = Constants.CHARACTERS:sub(i, i)
+		local prefix_char = M.config.characters:sub(i, i)
 		vim.keymap.set("n", prefix_char, function()
 			close_picker(bnr)
 		end, { buffer = picker_buf, noremap = true, silent = true })
@@ -345,26 +345,24 @@ function Keymaps.setup_buffer_keymaps(picker_buf)
 		end,
 		["<C-c>"] = function()
 			local lnum = vim.api.nvim_win_get_cursor(0)[1]
-			vim.ui.input({ prompt = "Enter new tag: ", default = "" }, function(new_tag)
+			vim.ui.input({ prompt = M.config.prompt_tag, default = "" }, function(new_tag)
 				if not new_tag or new_tag == "" then
 					return
 				end
 
 				local existing_pos = nil
-				for i = 1, #Constants.CHARACTERS do
-					if Constants.CHARACTERS:sub(i, i) == new_tag then
+				for i = 1, #M.config.characters do
+					if M.config.characters:sub(i, i) == new_tag then
 						existing_pos = i
 						break
 					end
 				end
 
 				if existing_pos then
-					-- Swap with the tagged position.
 					State.custom_order[lnum], State.custom_order[existing_pos] =
 						State.custom_order[existing_pos], State.custom_order[lnum]
 				else
-					-- Append the new tag to our characters and move the current item to the end.
-					Constants.CHARACTERS = Constants.CHARACTERS .. new_tag
+					M.config.characters = M.config.characters .. new_tag
 					local current_buffer = State.custom_order[lnum]
 					table.remove(State.custom_order, lnum)
 					table.insert(State.custom_order, current_buffer)
@@ -386,7 +384,6 @@ end
 -------------------------------
 
 function M.Open()
-	-- If the picker is already open, close it.
 	if State.active_popup_win and vim.api.nvim_win_is_valid(State.active_popup_win) then
 		vim.api.nvim_win_close(State.active_popup_win, true)
 		Settings.restore()
@@ -398,13 +395,11 @@ function M.Open()
 	State.prev_win = vim.api.nvim_get_current_win()
 	Settings.save()
 
-	-- Gather buffers, preserving previous custom order.
 	BufferManager.gather_buffers()
 
 	local picker_buf = BufferManager.create_picker_buffer()
 	BufferManager.update_buffer_lines(picker_buf)
 
-	-- Update cursor highlight.
 	local function update_highlight()
 		local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
 		vim.api.nvim_buf_clear_namespace(picker_buf, State.ns_id + 1, 0, -1)
@@ -429,16 +424,12 @@ function M.Open()
 		width = dims.width,
 		height = dims.height,
 		style = "minimal",
-		border = "rounded",
-		title = " Spine ",
-		title_pos = "center",
+		border = M.config.border,
+		title = " " .. M.config.title .. " ",
+		title_pos = M.config.title_pos,
 	})
 
-	vim.api.nvim_set_option_value(
-		"winhighlight",
-		"Normal:SpineNormal,FloatBorder:SpineBorder,FloatTitle:SpineTitle",
-		{ win = State.active_popup_win }
-	)
+	vim.api.nvim_set_option_value("winhighlight", M.config.winhighlight, { win = State.active_popup_win })
 end
 
 return M
