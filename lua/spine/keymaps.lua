@@ -48,11 +48,7 @@ function M.setup_buffer_keymaps(picker_buf)
 	-- Actions mapped to keys
 	local actions = {
 		-- Close picker actions
-		close = function()
-			state.restore_settings()
-			vim.cmd("quit")
-		end,
-
+		close = api.close,
 		-- Select buffer action
 		select = navigate_to_buffer,
 
@@ -89,6 +85,11 @@ function M.setup_buffer_keymaps(picker_buf)
 			local lnum = vim.api.nvim_win_get_cursor(0)[1]
 			if lnum <= #state.custom_order then
 				api.delete_buffer_by_index(lnum)
+				if #state.custom_order == 0 then
+					api.close()
+					vim.notify("[Spine] Closing empty popup!")
+					return
+				end
 				buffers.update_buffer_lines(picker_buf)
 				M.setup_buffer_keymaps(picker_buf)
 				ui.update_window_size()

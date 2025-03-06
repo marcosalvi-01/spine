@@ -114,4 +114,9 @@ function M.set_buffer_tag(index, new_tag)
 	return false
 end
 
+function M.close()
+	state.restore_settings()
+	vim.cmd("quit")
+end
+
 return M
