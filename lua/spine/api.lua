@@ -1,4 +1,5 @@
 -- api.lua
+
 local config = require("spine.config")
 local buffers = require("spine.buffers")
 local state = require("spine.state")

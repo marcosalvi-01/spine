@@ -1,5 +1,5 @@
 -- init.lua
--- Spine: A Neovim buffer management plugin with a popup interface
+
 local config = require("spine.config")
 local ui = require("spine.ui")
 local buffers = require("spine.buffers")

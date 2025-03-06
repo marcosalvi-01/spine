@@ -1,4 +1,5 @@
--- UI utilities for Spine
+-- ui.lua
+
 local config = require("spine.config")
 local state = require("spine.state")
 

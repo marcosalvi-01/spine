@@ -1,4 +1,5 @@
--- State management for Spine
+-- state.lua
+
 local M = {}
 
 -- Shared state

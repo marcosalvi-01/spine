@@ -1,5 +1,5 @@
 -- buffers.lua
--- Buffer management utilities for Spine
+
 local config = require("spine.config")
 local state = require("spine.state")
 local ui = require("spine.ui")

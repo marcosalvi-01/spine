@@ -1,4 +1,5 @@
--- Configuration module for Spine
+-- config.lua
+
 local M = {}
 
 -- Default configuration values

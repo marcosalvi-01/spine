@@ -1,4 +1,5 @@
--- Keymap management for Spine
+-- keymaps.lua
+
 local config = require("spine.config")
 local state = require("spine.state")
 local buffers = require("spine.buffers")
