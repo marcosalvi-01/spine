@@ -1,18 +1,27 @@
+-- buffers.lua
 -- Buffer management utilities for Spine
 local config = require("spine.config")
 local state = require("spine.state")
 local ui = require("spine.ui")
+local persistence = require("spine.persistence")
 
 local M = {}
 
 -- Gathers buffers and persists a custom order
 function M.gather_buffers()
 	local buf_array = {}
-	-- Build the list in the original order
-	for _, b in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_loaded(b) and (vim.fn.buflisted(b) == 1) then
-			table.insert(buf_array, b)
+
+	-- If auto mode is on, gather all buffers
+	if config.get("auto") then
+		-- Build the list in the original order (original behavior)
+		for _, b in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_loaded(b) and (vim.fn.buflisted(b) == 1) then
+				table.insert(buf_array, b)
+			end
 		end
+	else
+		-- In manual mode, load from saved state
+		buf_array = persistence.load_project_buffers()
 	end
 
 	if config.get("reverse_sort") then
@@ -27,32 +36,46 @@ function M.gather_buffers()
 	if not state.custom_order then
 		state.custom_order = buf_array
 	else
-		-- Build a set for fast lookup
-		local current_bufs = {}
-		for _, b in ipairs(buf_array) do
-			current_bufs[b] = true
-		end
-
-		local new_order = {}
-		local seen = {}
-		-- Retain buffers that are still valid
-		for _, b in ipairs(state.custom_order) do
-			if current_bufs[b] then
-				table.insert(new_order, b)
-				seen[b] = true
+		-- Only perform merging logic when in auto mode
+		if config.get("auto") then
+			-- Build a set for fast lookup
+			local current_bufs = {}
+			for _, b in ipairs(buf_array) do
+				current_bufs[b] = true
 			end
-		end
-		-- Append any new buffers
-		for _, b in ipairs(buf_array) do
-			if not seen[b] then
-				if config.get("reverse_sort") then
-					table.insert(new_order, 1, b)
-				else
+
+			local new_order = {}
+			local seen = {}
+
+			-- Retain buffers that are still valid
+			for _, b in ipairs(state.custom_order) do
+				if current_bufs[b] then
 					table.insert(new_order, b)
+					seen[b] = true
 				end
 			end
+
+			-- Append any new buffers
+			for _, b in ipairs(buf_array) do
+				if not seen[b] then
+					if config.get("reverse_sort") then
+						table.insert(new_order, 1, b)
+					else
+						table.insert(new_order, b)
+					end
+				end
+			end
+
+			state.custom_order = new_order
+		else
+			-- In manual mode, just use the filtered buf_array
+			state.custom_order = buf_array
 		end
-		state.custom_order = new_order
+	end
+
+	-- After setting state.custom_order, save if in manual mode
+	if not config.get("auto") then
+		persistence.save_project_buffers(state.custom_order)
 	end
 end
 
@@ -121,6 +144,50 @@ function M.swap_items(picker_buf, idx1, idx2)
 	state.custom_order[idx1], state.custom_order[idx2] = state.custom_order[idx2], state.custom_order[idx1]
 	M.update_buffer_lines(picker_buf)
 	require("spine.keymaps").setup_buffer_keymaps(picker_buf)
+end
+
+-- manually add current buffer to the list
+function M.add_current_buffer()
+	local current_buf = vim.api.nvim_get_current_buf()
+
+	-- Check if the buffer is valid for listing
+	if
+		not vim.api.nvim_buf_is_valid(current_buf)
+		or not vim.api.nvim_buf_is_loaded(current_buf)
+		or vim.fn.buflisted(current_buf) ~= 1
+	then
+		vim.notify("[Spine] Current buffer cannot be added.")
+		return false
+	end
+
+	-- Initialize custom_order if needed
+	if not state.custom_order then
+		state.custom_order = {}
+	end
+
+	-- Check if the buffer is already in the list
+	for _, b in ipairs(state.custom_order) do
+		if b == current_buf then
+			vim.notify("[Spine] Buffer already in the list.")
+			return false
+		end
+	end
+
+	-- Add the buffer to the list
+	if config.get("reverse_sort") then
+		table.insert(state.custom_order, 1, current_buf)
+	else
+		table.insert(state.custom_order, current_buf)
+	end
+
+	vim.notify("[Spine] Buffer added to the list.")
+
+	-- After adding the buffer:
+	if not config.get("auto") then
+		persistence.save_project_buffers(state.custom_order)
+	end
+
+	return true
 end
 
 return M

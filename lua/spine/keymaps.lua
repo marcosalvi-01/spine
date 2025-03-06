@@ -3,6 +3,8 @@ local config = require("spine.config")
 local state = require("spine.state")
 local buffers = require("spine.buffers")
 local ui = require("spine.ui")
+local api = require("spine.api")
+local persistence = require("spine.persistence")
 
 local M = {}
 
@@ -60,6 +62,11 @@ function M.setup_buffer_keymaps(picker_buf)
 			if lnum > 1 then
 				buffers.swap_items(picker_buf, lnum, lnum - 1)
 				vim.api.nvim_win_set_cursor(0, { lnum - 1, 0 })
+
+				-- update the saved state
+				if not config.get("auto") then
+					persistence.save_project_buffers(state.custom_order)
+				end
 			end
 		end,
 
@@ -69,6 +76,11 @@ function M.setup_buffer_keymaps(picker_buf)
 			if lnum < #state.custom_order then
 				buffers.swap_items(picker_buf, lnum, lnum + 1)
 				vim.api.nvim_win_set_cursor(0, { lnum + 1, 0 })
+
+				-- update the saved state
+				if not config.get("auto") then
+					persistence.save_project_buffers(state.custom_order)
+				end
 			end
 		end,
 
@@ -76,9 +88,7 @@ function M.setup_buffer_keymaps(picker_buf)
 		delete_buffer = function()
 			local lnum = vim.api.nvim_win_get_cursor(0)[1]
 			if lnum <= #state.custom_order then
-				local bnr = state.custom_order[lnum]
-				vim.cmd("bdelete " .. bnr)
-				table.remove(state.custom_order, lnum)
+				api.delete_buffer_by_index(lnum)
 				buffers.update_buffer_lines(picker_buf)
 				M.setup_buffer_keymaps(picker_buf)
 				ui.update_window_size()

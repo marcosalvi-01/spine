@@ -1,9 +1,11 @@
+-- init.lua
 -- Spine: A Neovim buffer management plugin with a popup interface
 local config = require("spine.config")
 local ui = require("spine.ui")
 local buffers = require("spine.buffers")
 local keymaps = require("spine.keymaps")
 local state = require("spine.state")
+local api = require("spine.api")
 
 local M = {}
 
@@ -11,6 +13,17 @@ local M = {}
 function M.setup(user_config)
 	config.setup(user_config)
 	ui.setup_highlights()
+
+	-- Add autocmd to save buffers when Neovim exits
+	if not config.get("auto") and config.get("persist_manual_buffers") then
+		vim.api.nvim_create_autocmd("VimLeavePre", {
+			callback = function()
+				if state.custom_order and #state.custom_order > 0 then
+					require("spine.persistence").save_project_buffers(state.custom_order)
+				end
+			end,
+		})
+	end
 end
 
 -- Main function to open the buffer picker
@@ -70,112 +83,19 @@ function M.open()
 	vim.api.nvim_set_option_value("winhighlight", config.get("winhighlight"), { win = state.active_popup_win })
 end
 
--- API Functions
--- Switch to a buffer by index
-function M.switch_to_buffer_by_index(index)
-	if not state.custom_order then
-		buffers.gather_buffers()
-	end
-
-	if index > 0 and index <= #state.custom_order then
-		vim.cmd("buffer " .. state.custom_order[index])
-		return true
-	end
-	return false
-end
-
--- Switch to a buffer by tag character
-function M.switch_to_buffer_by_tag(char)
-	if not state.custom_order then
-		buffers.gather_buffers()
-	end
-
-	local index = config.get("characters"):find(char)
-	return M.switch_to_buffer_by_index(index)
-end
-
--- Move a buffer in the custom order
-function M.move_buffer(from_index, to_index)
-	if not state.custom_order then
-		buffers.gather_buffers()
-	end
-
-	if from_index > 0 and from_index <= #state.custom_order and to_index > 0 and to_index <= #state.custom_order then
-		local buf = table.remove(state.custom_order, from_index)
-		table.insert(state.custom_order, to_index, buf)
-		return true
-	end
-	return false
-end
-
--- Delete a buffer by index
-function M.delete_buffer_by_index(index)
-	if not state.custom_order then
-		buffers.gather_buffers()
-	end
-
-	if index > 0 and index <= #state.custom_order then
-		local bnr = state.custom_order[index]
-		vim.cmd("bdelete " .. bnr)
-		table.remove(state.custom_order, index)
-		return true
-	end
-	return false
-end
-
--- Split window and show buffer by index
-function M.split_with_buffer(index, vertical)
-	if not state.custom_order then
-		buffers.gather_buffers()
-	end
-
-	if index > 0 and index <= #state.custom_order then
-		local bnr = state.custom_order[index]
-		local cmd = vertical and "vsplit" or "split"
-		vim.cmd(cmd .. " | buffer " .. bnr)
-		return true
-	end
-	return false
-end
-
--- Update a buffer tag
-function M.set_buffer_tag(index, new_tag)
-	if not state.custom_order then
-		buffers.gather_buffers()
-	end
-
-	if index > 0 and index <= #state.custom_order then
-		-- Find if tag already exists
-		local existing_pos = config.get("characters"):find(new_tag)
-
-		if existing_pos then
-			-- Swap if tag exists
-			state.custom_order[index], state.custom_order[existing_pos] =
-				state.custom_order[existing_pos], state.custom_order[index]
-		else
-			-- Add new tag if it doesn't exist
-			config.update_characters(config.get("characters") .. new_tag)
-			local current_buffer = state.custom_order[index]
-			table.remove(state.custom_order, index)
-			table.insert(state.custom_order, current_buffer)
-		end
-		return true
-	end
-	return false
-end
-
 -- Export API functions
 M.api = {
-	switch_to_buffer_by_index = M.switch_to_buffer_by_index,
-	switch_to_buffer_by_tag = M.switch_to_buffer_by_tag,
-	move_buffer = M.move_buffer,
-	delete_buffer_by_index = M.delete_buffer_by_index,
-	split_with_buffer = M.split_with_buffer,
-	set_buffer_tag = M.set_buffer_tag,
+	switch_to_buffer_by_index = api.switch_to_buffer_by_index,
+	switch_to_buffer_by_tag = api.switch_to_buffer_by_tag,
+	move_buffer = api.move_buffer,
+	delete_buffer_by_index = api.delete_buffer_by_index,
+	split_with_buffer = api.split_with_buffer,
+	set_buffer_tag = api.set_buffer_tag,
 	get_buffer_list = function()
 		return vim.deepcopy(state.custom_order)
 	end,
 	refresh_buffers = buffers.gather_buffers,
+	add_current_buffer = buffers.add_current_buffer,
 }
 
 return M

@@ -42,6 +42,9 @@ local default_config = {
 		split_buffer = { "<C-s>" },
 		change_tag = { "<C-c>" },
 	},
+	auto = true, -- Wether to automatically add opened buffers to the list
+	persist_manual_buffers = true, -- Whether to persist manually added buffers
+	recreate_saved_buffers = true, -- Whether to recreate saved buffers that aren't currently open
 }
 
 -- The actual configuration that will be used
