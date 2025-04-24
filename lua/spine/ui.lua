@@ -33,8 +33,9 @@ function M.calculate_dimensions()
 	return {
 		width = width,
 		height = height,
-		row = math.floor((total_lines - height) / 2),
-		col = math.floor((total_cols - width) / 2),
+		-- consider also the borders
+		row = math.floor((total_lines - (height + 2)) / 2),
+		col = math.floor((total_cols - (width + 2)) / 2),
 	}
 end
 
