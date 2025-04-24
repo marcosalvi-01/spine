@@ -28,10 +28,10 @@ function M.calculate_dimensions()
 
 	local total_lines, total_cols = vim.o.lines, vim.o.columns
 	local height = (#state.custom_order == 0) and 1 or #state.custom_order
-	local width = math.min(max_width, total_cols - 2)
+	local width = math.min(max_width, total_cols - 2) + 2
 
 	return {
-		width = width + 2,
+		width = width,
 		height = height,
 		row = math.floor((total_lines - height) / 2),
 		col = math.floor((total_cols - width) / 2),
